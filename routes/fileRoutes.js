@@ -25,11 +25,17 @@ const fileFilter = (req, file, cb) => {
     "application/pdf",
     "text/plain",
   ];
-  if (supportedTypes.includes(file.mimetype)) {
-    cb(null, true); // Accept file
+  if (!supportedTypes.includes(file.mimetype)) {
+    // Add to file validation error if unsupported
+    if (!req.fileValidationError) {
+      req.fileValidationError = [];
+    }
+    req.fileValidationError.push(
+      file.originalname + " rejected due to unsupported file type"
+    );
+    cb(null, false); // Reject unsupported files
   } else {
-    req.fileValidationError = "Unsupported file type!"; // Set error message on the request
-    cb(null, false); // Reject file silently
+    cb(null, true); // Accept supported files
   }
 };
 
@@ -37,17 +43,26 @@ const upload = multer({
   storage: storage,
   fileFilter: fileFilter,
   limits: { fileSize: 10 * 1024 * 1024 }, // for example, 10 MB limit
-});
+}).array("files", 5);
 
 const isAuthenticated = (req, res, next) => {
-  console.log("Session data:", req.session); // Log session data
-  console.log("User data:", req.user); // Log user data
+  // console.log("Session data:", req.session); // Log session data
+  // console.log("User data:", req.user); // Log user data
 
   if (!req.user) {
     return res.status(401).send("User not authenticated");
   }
   next();
 };
+
+function formatBytes(bytes, decimals = 2) {
+  if (bytes === 0) return "0 Bytes";
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ["Bytes", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + " " + sizes[i];
+}
 
 // List all files
 router.get("/files", isAuthenticated, async (req, res) => {
@@ -63,37 +78,88 @@ router.get("/files", isAuthenticated, async (req, res) => {
 router.post(
   "/upload",
   isAuthenticated,
-  upload.single("file"),
-  async (req, res) => {
-    if (!req.user) {
-      return res.status(401).send("User not authenticated");
-    }
-
-    // Check if the file was rejected by the file filter
-    if (req.fileValidationError) {
-      return res.status(400).send(req.fileValidationError);
-    }
-
-    // Check if the file was not uploaded
-    if (!req.file) {
-      return res.status(400).send("No file was uploaded.");
-    }
-
-    // Proceed if the file was accepted
-    const newFile = new File({
-      user: req.user._id,
-      name: req.file.originalname,
-      size: req.file.size,
-      fileType: req.file.mimetype,
-      path: req.file.path,
-      createdAt: new Date(),
+  (req, res, next) => {
+    upload(req, res, function (error) {
+      if (
+        error instanceof multer.MulterError &&
+        error.code === "LIMIT_UNEXPECTED_FILE"
+      ) {
+        return res.status(400).json({
+          message: "Error: Too many files. Maximum 5 files allowed.",
+        });
+      } else if (error) {
+        return res.status(500).send(error.message);
+      }
+      if (!req.files || req.files.length === 0) {
+        return res.status(400).json({
+          message: "No files were provided for upload.",
+        });
+      }
+      if (req.fileValidationError) {
+        req.rejectedFiles = req.fileValidationError;
+      }
+      next(); // Continue to process valid files if any
     });
+  },
+  async (req, res) => {
+    const results = {
+      uploaded: [],
+      rejected: req.rejectedFiles || [],
+      duplicates: [],
+      totalStorageUsed: 0, // Initialize the storage used counter
+    };
 
-    try {
-      await newFile.save();
-      res.status(201).send("File uploaded successfully");
-    } catch (error) {
-      res.status(400).send("Failed to upload file: " + error.message);
+    const fileNames = new Set();
+    const duplicateTracker = {};
+
+    // Identify and save files while checking for duplicates
+    await Promise.all(
+      req.files.map(async (file) => {
+        if (duplicateTracker[file.originalname]) {
+          if (!results.duplicates.includes(file.originalname)) {
+            results.duplicates.push(file.originalname); // Record only once
+          }
+        } else {
+          fileNames.add(file.originalname);
+          duplicateTracker[file.originalname] = true; // Mark as having duplicates
+
+          const newFile = new File({
+            user: req.user._id,
+            name: file.originalname,
+            size: file.size,
+            fileType: file.mimetype,
+            path: file.path,
+            createdAt: new Date(),
+          });
+          await newFile.save();
+          results.uploaded.push(file.originalname);
+          results.totalStorageUsed += file.size; // Accumulate the file size
+        }
+      })
+    );
+
+    const formattedStorage = formatBytes(results.totalStorageUsed);
+
+    // Decide the response based on the presence of duplicates, rejections, or successful uploads
+    if (results.duplicates.length > 0 || results.rejected.length > 0) {
+      res.status(207).json({
+        message: "File upload completed with some issues.",
+        uploaded: results.uploaded,
+        rejected: results.rejected,
+        duplicates: results.duplicates,
+        totalStorageUsed: formattedStorage,
+      });
+    } else if (results.uploaded.length > 0) {
+      res.status(201).json({
+        message: "All files uploaded successfully",
+        uploaded: results.uploaded,
+        totalStorageUsed: formattedStorage,
+      });
+    } else {
+      res.status(400).json({
+        message: "No valid files were uploaded.",
+        rejected: results.rejected,
+      });
     }
   }
 );
