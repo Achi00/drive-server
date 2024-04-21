@@ -3,22 +3,19 @@ const multer = require("multer");
 const File = require("../models/File");
 const path = require("path");
 const router = express.Router();
+const { Storage } = require("@google-cloud/storage");
 
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    // Correct path to the uploads folder
-    const uploadPath = path.resolve(__dirname, "../uploads/");
-    cb(null, uploadPath);
-  },
-  filename: function (req, file, cb) {
-    const filename =
-      file.fieldname + "-" + Date.now() + "-" + file.originalname;
-    cb(null, filename);
-  },
+const storage = new Storage({
+  keyFilename: path.join(__dirname, "../gcloud.json"),
 });
+const bucketName = "drive-app";
+const bucket = storage.bucket(bucketName);
+
+const gcsStorage = multer.memoryStorage();
 
 // Define the file filter to check supported types
 const fileFilter = (req, file, cb) => {
+  console.log("Checking file type:", file.mimetype); // Debugging log
   const supportedTypes = [
     "image/jpeg",
     "image/png",
@@ -26,10 +23,7 @@ const fileFilter = (req, file, cb) => {
     "text/plain",
   ];
   if (!supportedTypes.includes(file.mimetype)) {
-    // Add to file validation error if unsupported
-    if (!req.fileValidationError) {
-      req.fileValidationError = [];
-    }
+    req.fileValidationError = req.fileValidationError || [];
     req.fileValidationError.push(
       file.originalname + " rejected due to unsupported file type"
     );
@@ -40,7 +34,7 @@ const fileFilter = (req, file, cb) => {
 };
 
 const upload = multer({
-  storage: storage,
+  storage: gcsStorage,
   fileFilter: fileFilter,
   limits: { fileSize: 10 * 1024 * 1024 }, // for example, 10 MB limit
 }).array("files", 5);
@@ -109,56 +103,68 @@ router.post(
       totalStorageUsed: 0, // Initialize the storage used counter
     };
 
-    const fileNames = new Set();
-    const duplicateTracker = {};
+    const fileNames = new Set(); // To track file names in the current batch for duplicate detection
 
-    // Identify and save files while checking for duplicates
-    await Promise.all(
-      req.files.map(async (file) => {
-        if (duplicateTracker[file.originalname]) {
-          if (!results.duplicates.includes(file.originalname)) {
-            results.duplicates.push(file.originalname); // Record only once
-          }
-        } else {
-          fileNames.add(file.originalname);
-          duplicateTracker[file.originalname] = true; // Mark as having duplicates
+    // Process only valid files if there are any
+    const uploads = req.files.map((file) => {
+      if (fileNames.has(file.originalname)) {
+        results.duplicates.push(file.originalname);
+        return Promise.resolve(); // Skip upload but resolve the promise
+      } else {
+        fileNames.add(file.originalname); // Add the file name to the set
 
-          const newFile = new File({
-            user: req.user._id,
-            name: file.originalname,
-            size: file.size,
-            fileType: file.mimetype,
-            path: file.path,
-            createdAt: new Date(),
+        const blob = bucket.file(file.originalname);
+        const blobStream = blob.createWriteStream({
+          resumable: false,
+        });
+
+        return new Promise((resolve, reject) => {
+          blobStream.on("error", (err) => reject(err));
+          blobStream.on("finish", async () => {
+            const publicUrl = `https://storage.googleapis.com/${bucket.name}/${blob.name}`;
+            const newFile = new File({
+              user: req.user._id,
+              name: file.originalname,
+              size: file.size,
+              fileType: file.mimetype,
+              path: publicUrl,
+              createdAt: new Date(),
+            });
+            await newFile.save();
+            results.uploaded.push(file.originalname);
+            results.totalStorageUsed += file.size;
+            resolve();
           });
-          await newFile.save();
-          results.uploaded.push(file.originalname);
-          results.totalStorageUsed += file.size; // Accumulate the file size
-        }
-      })
-    );
+          blobStream.end(file.buffer);
+        });
+      }
+    });
+
+    try {
+      await Promise.all(uploads);
+    } catch (error) {
+      return res.status(500).send("Error uploading files: " + error.message);
+    }
 
     const formattedStorage = formatBytes(results.totalStorageUsed);
 
-    // Decide the response based on the presence of duplicates, rejections, or successful uploads
-    if (results.duplicates.length > 0 || results.rejected.length > 0) {
-      res.status(207).json({
-        message: "File upload completed with some issues.",
-        uploaded: results.uploaded,
-        rejected: results.rejected,
-        duplicates: results.duplicates,
-        totalStorageUsed: formattedStorage,
-      });
-    } else if (results.uploaded.length > 0) {
+    if (
+      results.uploaded.length > 0 &&
+      results.rejected.length === 0 &&
+      results.duplicates.length === 0
+    ) {
       res.status(201).json({
         message: "All files uploaded successfully",
         uploaded: results.uploaded,
         totalStorageUsed: formattedStorage,
       });
     } else {
-      res.status(400).json({
-        message: "No valid files were uploaded.",
+      res.status(207).json({
+        message: "File upload completed with some issues.",
+        uploaded: results.uploaded,
         rejected: results.rejected,
+        duplicates: results.duplicates,
+        totalStorageUsed: formattedStorage,
       });
     }
   }
