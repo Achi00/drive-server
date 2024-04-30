@@ -3,11 +3,28 @@
 const mongoose = require("mongoose");
 
 const fileSchema = new mongoose.Schema({
-  user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+  user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
   name: { type: String, required: true },
-  size: { type: Number, required: true },
-  fileType: { type: String, required: true },
-  path: { type: String, required: true },
+  size: {
+    type: Number,
+    required: function () {
+      return this.type === "file";
+    },
+  },
+  fileType: {
+    type: String,
+    required: function () {
+      return this.type === "file";
+    },
+  },
+  path: {
+    type: String,
+    required: function () {
+      return this.type === "file";
+    },
+  },
+  parent: { type: mongoose.Schema.Types.ObjectId, ref: "File" },
+  type: { type: String, enum: ["file", "folder"], default: "file" },
   createdAt: { type: Date, default: Date.now },
 });
 
