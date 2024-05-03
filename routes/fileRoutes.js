@@ -62,13 +62,36 @@ function formatBytes(bytes, decimals = 2) {
 // List all files
 router.get("/files", isAuthenticated, async (req, res) => {
   try {
-    const files = await File.find({ user: req.user._id });
+    const { parent } = req.query;
+    const query = {
+      $or: [{ user: req.user._id }, { isPublic: true }],
+    };
+
+    if (parent) {
+      query.parent = parent;
+    } else {
+      query.$or.push({ parent: { $exists: false } }, { parent: null });
+    }
+
+    const files = await File.find(query);
+
+    // Check if any files are private and don't belong to the user
+    const privateFiles = await File.find({
+      _id: { $nin: files.map((file) => file._id) },
+      isPublic: false,
+    });
+
+    if (privateFiles.length > 0) {
+      return res
+        .status(403)
+        .json({ message: "Some files are private and cannot be accessed." });
+    }
+
     res.json(files);
   } catch (error) {
     res.status(500).send("Failed to retrieve files.");
   }
 });
-
 router.get("/files/:id", isAuthenticated, async (req, res) => {
   try {
     const parentId = req.params.id;
@@ -154,17 +177,22 @@ router.post(
       duplicates: [],
       totalStorageUsed: 0,
       location: null,
+      isPublic: req.body.isPublic || false,
     };
 
-    const fileNames = new Set(); // Track file names in the current batch for duplicate detection
+    const fileNames = new Set();
     const uploads = (req.files || []).map((file) => {
-      if (fileNames.has(file.originalname)) {
-        results.duplicates.push(file.originalname);
-        return Promise.resolve(); // Skip upload but resolve the promise
-      }
-      fileNames.add(file.originalname);
+      const uniqueFileName = `${req.user._id}_${Date.now()}_${
+        file.originalname
+      }`;
 
-      const blob = bucket.file(file.originalname);
+      if (fileNames.has(uniqueFileName)) {
+        results.duplicates.push(file.originalname);
+        return Promise.resolve();
+      }
+      fileNames.add(uniqueFileName);
+
+      const blob = bucket.file(uniqueFileName);
       const blobStream = blob.createWriteStream({
         resumable: false,
       });
@@ -176,10 +204,12 @@ router.post(
           const newFile = new File({
             user: req.user._id,
             name: file.originalname,
+            uniqueName: uniqueFileName,
             size: file.size,
             fileType: file.mimetype,
             path: publicUrl,
             parent: req.body.parent || undefined,
+            isPublic: req.body.isPublic || false,
             createdAt: new Date(),
           });
           await newFile.save();
@@ -244,6 +274,7 @@ router.post(
         rejected: results.rejected,
         duplicates: results.duplicates,
         location: results.location,
+        isPublic: results.isPublic,
         totalStorageUsed: formattedStorage,
         availableStorage: formattedAvailableStorage,
       });
@@ -252,6 +283,7 @@ router.post(
         message: "All files uploaded successfully",
         uploaded: results.uploaded,
         location: results.location,
+        isPublic: results.isPublic,
         totalStorageUsed: formattedStorage,
         availableStorage: formattedAvailableStorage,
       });
@@ -279,10 +311,30 @@ router.post("/folders", isAuthenticated, async (req, res) => {
 });
 
 // Download a file
-router.get("/download/:fileId", async (req, res) => {
+router.get("/download/:fileId", isAuthenticated, async (req, res) => {
   try {
-    const file = await File.findById(req.params.fileId);
-    res.download(file.path);
+    const fileId = req.params.fileId;
+    const file = await File.findById(fileId);
+
+    if (!file) {
+      return res.status(404).send("File not found.");
+    }
+
+    // Check if the authenticated user has permission to access the file
+    if (file.user.toString() === req.user._id.toString()) {
+      // Generate a signed URL for the file
+      const options = {
+        version: "v4",
+        action: "read",
+        expires: Date.now() + 15 * 60 * 1000, // URL expires in 15 minutes
+      };
+
+      const [url] = await bucket.file(file.uniqueName).getSignedUrl(options);
+      return res.redirect(url);
+    } else {
+      // User does not have permission to access the file
+      return res.status(403).send("Access denied.");
+    }
   } catch (error) {
     res.status(500).send("Error downloading file: " + error.message);
   }
