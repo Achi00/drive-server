@@ -1,5 +1,3 @@
-// routes/authRoutes.js
-
 const router = require("express").Router();
 const passport = require("passport");
 
@@ -12,6 +10,8 @@ router.get(
   })
 );
 
+// authRoute.js
+
 router.get(
   "/google/callback",
   passport.authenticate("google", {
@@ -19,10 +19,24 @@ router.get(
   }),
   (req, res) => {
     if (req.user) {
-      req.session.userId = req.user._id; // Store the user ID in the session
+      // Save more data to session if needed
+      req.session.user = {
+        id: req.user._id,
+        name: req.user.name,
+        email: req.user.email,
+        picture: req.user.picture,
+      };
+      // Redirect to the client-side application
+      res.redirect("http://localhost:3000/dashboard");
+    } else {
+      res.redirect("/login");
     }
-    res.redirect("/"); // Or redirect to a dashboard or other appropriate page
   }
 );
+
+router.post("/logout", (req, res) => {
+  req.logout();
+  res.json({ message: "Logged out successfully" });
+});
 
 module.exports = router;

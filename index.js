@@ -8,6 +8,7 @@ const cors = require("cors");
 const morgan = require("morgan");
 const passportSetup = require("./config/passport-setup");
 const authRoutes = require("./routes/authRoutes");
+const logoutRoutes = require("./routes/logoutRoutes");
 const fileRoutes = require("./routes/fileRoutes");
 
 const app = express();
@@ -32,8 +33,8 @@ app.use(passport.session());
 // Middleware
 app.use(
   cors({
-    origin: "http://localhost:3000", // Adjust according to your frontend host
-    credentials: true, // This is important for sessions to work across different domains
+    origin: "http://localhost:3000",
+    credentials: true, // important for sessions to work across different domains
   })
 );
 
@@ -41,8 +42,17 @@ app.use(express.json());
 app.use(morgan("tiny"));
 
 app.use("/auth", authRoutes);
+app.use("/logout", logoutRoutes);
 // file upload
 app.use("/v1/files", fileRoutes);
+
+app.get("/api/session", (req, res) => {
+  if (req.user) {
+    res.json({ user: req.user });
+  } else {
+    res.status(401).json({ message: "You are not authenticated" });
+  }
+});
 
 // MongoDB connection
 mongoose

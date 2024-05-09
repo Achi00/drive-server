@@ -41,9 +41,6 @@ const upload = multer({
 }).array("files", 5);
 
 const isAuthenticated = (req, res, next) => {
-  // console.log("Session data:", req.session); // Log session data
-  // console.log("User data:", req.user); // Log user data
-
   if (!req.user) {
     return res.status(401).send("User not authenticated");
   }
@@ -60,7 +57,7 @@ function formatBytes(bytes, decimals = 2) {
 }
 
 // List all files
-router.get("/files", isAuthenticated, async (req, res) => {
+router.get("/getfiles", isAuthenticated, async (req, res) => {
   try {
     const { parent } = req.query;
     const query = {
