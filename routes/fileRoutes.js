@@ -5,18 +5,19 @@ const User = require("../models/User");
 const path = require("path");
 const router = express.Router();
 const { Storage } = require("@google-cloud/storage");
+const googleDocsApi = require("../config/googleDocsApi");
+const { google } = require("googleapis");
 
 const storage = new Storage({
   keyFilename: path.join(__dirname, "../gcloud.json"),
 });
-const bucketName = "drive-app";
+const bucketName = process.env.GCLOUD_BUCKET;
 const bucket = storage.bucket(bucketName);
 
 const gcsStorage = multer.memoryStorage();
 
 // Define the file filter to check supported types
 const fileFilter = (req, file, cb) => {
-  console.log("Checking file type:", file.mimetype); // Debugging log
   const supportedTypes = [
     "image/jpeg",
     "image/png",
@@ -89,17 +90,31 @@ router.get("/getfiles", isAuthenticated, async (req, res) => {
     res.status(500).send("Failed to retrieve files.");
   }
 });
-router.get("/files/:id", isAuthenticated, async (req, res) => {
+router.get("/files/:fileId/content", isAuthenticated, async (req, res) => {
   try {
-    const parentId = req.params.id;
-    const files = await File.find({ user: req.user._id, parent: parentId });
-    res.json(files);
+    const fileId = req.params.fileId;
+    const file = await File.findById(fileId);
+
+    if (!file) {
+      return res.status(404).send("File not found.");
+    }
+
+    if (file.user.toString() !== req.user._id.toString()) {
+      return res.status(403).send("Access denied.");
+    }
+
+    if (file.type === "file" && file.fileType === "text/plain") {
+      return res.send(file.content);
+    } else {
+      return res.status(400).send("File content not available.");
+    }
   } catch (error) {
-    res.status(500).send("Failed to retrieve files.");
+    res.status(500).send("Error fetching file content: " + error.message);
   }
 });
 
-// Upload a file route
+let docs;
+// upload files
 router.post(
   "/upload",
   isAuthenticated,
@@ -110,14 +125,24 @@ router.post(
         return res.status(404).json({ message: "User not found." });
       }
 
-      console.log("User before upload:", user); // Debugging log
+      const oauth2Client = new google.auth.OAuth2(
+        process.env.GOOGLE_CLIENT_ID,
+        process.env.GOOGLE_CLIENT_SECRET,
+        "http://localhost:8080/auth/google/callback"
+      );
 
-      // Set default value for storageLimit if it is not defined
-      user.storageLimit = user.storageLimit || 1024 * 1024 * 1024; // Default to 1GB
+      oauth2Client.setCredentials({
+        access_token: user.accessToken,
+        refresh_token: user.refreshToken,
+      });
 
-      console.log("User after setting default values:", user); // Debugging log
+      docs = google.docs({
+        version: "v1",
+        auth: oauth2Client,
+      });
 
-      // Proceed with Multer upload inside this block
+      user.storageLimit = user.storageLimit || 1024 * 1024 * 1024;
+
       upload(req, res, function (error) {
         if (
           error instanceof multer.MulterError &&
@@ -140,18 +165,11 @@ router.post(
           });
         }
 
-        console.log("Uploaded files:", req.files); // Debugging log
-        console.log("Rejected files:", rejectedFiles); // Debugging log
-
-        // Calculate new potential storage total
         const totalSizeOfNewFiles = (req.files || []).reduce(
           (acc, file) => acc + file.size,
           0
         );
         const newStorageTotal = user.totalStorageUsed + totalSizeOfNewFiles;
-
-        console.log("Total size of new files:", totalSizeOfNewFiles); // Debugging log
-        console.log("New storage total:", newStorageTotal); // Debugging log
 
         if (newStorageTotal > user.storageLimit) {
           return res.status(400).json({
@@ -160,7 +178,7 @@ router.post(
         }
 
         req.rejectedFiles = rejectedFiles;
-        next(); // Proceed if there are files and no critical upload errors
+        next();
       });
     } catch (error) {
       console.error("Error during file upload:", error);
@@ -206,9 +224,28 @@ router.post(
             fileType: file.mimetype,
             path: publicUrl,
             parent: req.body.parent || undefined,
+            content:
+              file.mimetype === "text/plain"
+                ? file.buffer.toString()
+                : undefined,
             isPublic: req.body.isPublic || false,
             createdAt: new Date(),
+            googleDocId: undefined,
           });
+
+          if (file.mimetype === "text/plain") {
+            try {
+              const doc = await docs.documents.create({
+                requestBody: {
+                  title: file.originalname,
+                },
+              });
+              newFile.googleDocId = doc.data.documentId;
+            } catch (error) {
+              console.error("Error creating Google Doc:", error);
+            }
+          }
+
           await newFile.save();
           results.uploaded.push(file.originalname);
           results.totalStorageUsed += file.size;
@@ -224,9 +261,6 @@ router.post(
       return res.status(500).send("Error uploading files: " + error.message);
     }
 
-    console.log("Upload results:", results); // Debugging log
-
-    // Update the user's storage usage in the database
     const updatedUser = await User.findByIdAndUpdate(
       req.user._id,
       {
@@ -235,7 +269,6 @@ router.post(
       { new: true }
     );
 
-    // Retrieve the parent folder name if a parent ID is provided
     if (req.body.parent) {
       try {
         const parentFolder = await File.findById(req.body.parent);
@@ -247,18 +280,12 @@ router.post(
       }
     }
 
-    console.log("Updated user:", updatedUser); // Debugging log
-
     const formattedStorage = formatBytes(updatedUser.totalStorageUsed);
     const availableStorage = Math.max(
       updatedUser.storageLimit - updatedUser.totalStorageUsed,
       0
     );
     const formattedAvailableStorage = formatBytes(availableStorage);
-
-    console.log("Formatted storage:", formattedStorage); // Debugging log
-    console.log("Available storage:", availableStorage); // Debugging log
-    console.log("Formatted available storage:", formattedAvailableStorage); // Debugging log
 
     if (
       results.uploaded.length > 0 ||
@@ -304,6 +331,104 @@ router.post("/folders", isAuthenticated, async (req, res) => {
     res.status(201).json(newFolder);
   } catch (error) {
     res.status(500).send("Error creating folder: " + error.message);
+  }
+});
+
+// edit with google docs
+router.post("/files/:fileId/edit", isAuthenticated, async (req, res) => {
+  try {
+    const { fileId } = req.params;
+    const file = await File.findById(fileId);
+
+    if (!file) {
+      return res.status(404).json({ message: "File not found" });
+    }
+
+    if (file.user.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+
+    // Update the Google Docs document with the content of the text file
+    const user = await User.findById(req.user._id);
+    const oauth2Client = new google.auth.OAuth2(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      "http://localhost:8080/auth/google/callback"
+    );
+    oauth2Client.setCredentials({
+      access_token: user.accessToken,
+      refresh_token: user.refreshToken,
+    });
+    const docs = google.docs({
+      version: "v1",
+      auth: oauth2Client,
+    });
+
+    await docs.documents.batchUpdate({
+      documentId: file.googleDocId,
+      requestBody: {
+        requests: [
+          {
+            insertText: {
+              text: file.content,
+              endOfSegmentLocation: {},
+            },
+          },
+        ],
+      },
+    });
+
+    // Generate the Google Docs edit URL
+    const editUrl = `https://docs.google.com/document/d/${file.googleDocId}/edit`;
+
+    return res.status(200).json({ editUrl });
+  } catch (error) {
+    console.error("Error generating edit URL:", error);
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+});
+
+// save google docs changes on mongodb
+router.put("/files/:fileId/content", isAuthenticated, async (req, res) => {
+  try {
+    const { fileId } = req.params;
+    const file = await File.findById(fileId);
+
+    if (!file) {
+      return res.status(404).json({ message: "File not found" });
+    }
+
+    if (file.user.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+
+    // Get the document content from Google Docs API
+    const doc = await googleDocsApi.documents.get({
+      documentId: file.googleDocId,
+    });
+
+    // Extract the plain text content from the document
+    const content = doc.data.body.content
+      .map((element) => {
+        if (element.paragraph) {
+          return element.paragraph.elements
+            .map((el) => el.textRun?.content || "")
+            .join("");
+        }
+        return "";
+      })
+      .join("\n");
+
+    // Update the file content in MongoDB
+    file.content = content;
+    await file.save();
+
+    return res
+      .status(200)
+      .json({ message: "File content updated successfully" });
+  } catch (error) {
+    console.error("Error updating file content:", error);
+    return res.status(500).json({ message: "Internal Server Error" });
   }
 });
 

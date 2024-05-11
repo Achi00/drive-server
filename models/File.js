@@ -24,6 +24,8 @@ const fileSchema = new mongoose.Schema({
     },
   },
   parent: { type: mongoose.Schema.Types.ObjectId, ref: "File" },
+  content: { type: String },
+  googleDocId: { type: String },
   type: { type: String, enum: ["file", "folder"], default: "file" },
   uniqueName: { type: String, required: true },
   isPublic: { type: Boolean, default: false },

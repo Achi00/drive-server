@@ -2,6 +2,8 @@ const mongoose = require("mongoose");
 
 const userSchema = new mongoose.Schema({
   googleId: { type: String, required: true, unique: true },
+  accessToken: { type: String },
+  refreshToken: { type: String },
   displayName: { type: String, required: true },
   email: { type: String, required: true },
   photoUrl: { type: String },

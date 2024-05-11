@@ -8,6 +8,14 @@ passport.use(
       clientID: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
       callbackURL: "http://localhost:8080/auth/google/callback",
+      scope: [
+        "profile",
+        "email",
+        "https://www.googleapis.com/auth/documents",
+        "https://www.googleapis.com/auth/drive.file",
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive",
+      ],
     },
     async (accessToken, refreshToken, profile, done) => {
       try {
@@ -28,7 +36,9 @@ passport.use(
         let user = await User.findOne({ googleId: profile.id });
         if (user) {
           // If user exists, log them in
-          console.log("Current user: ", user);
+          user.accessToken = accessToken;
+          user.refreshToken = refreshToken;
+          await user.save();
           return done(null, user);
         } else {
           // If user doesn't exist, create a new one
@@ -36,7 +46,9 @@ passport.use(
             googleId: profile.id,
             name: profile.displayName,
             email: email,
-            picture: photo, // Save the profile picture URL
+            picture: photo,
+            accessToken: accessToken,
+            refreshToken: refreshToken,
           });
           await user.save();
           console.log("New user created: ", user);
