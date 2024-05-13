@@ -57,6 +57,28 @@ function formatBytes(bytes, decimals = 2) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + " " + sizes[i];
 }
 
+async function refreshAccessToken(user) {
+  const oauth2Client = new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    "http://localhost:8080/auth/google/callback"
+  );
+
+  oauth2Client.setCredentials({
+    refresh_token: user.refreshToken,
+  });
+
+  try {
+    const { tokens } = await oauth2Client.refreshAccessToken();
+    user.accessToken = tokens.access_token;
+    await user.save();
+    return user.accessToken;
+  } catch (error) {
+    console.error("Error refreshing access token:", error);
+    throw error;
+  }
+}
+
 // List all files
 router.get("/getfiles", isAuthenticated, async (req, res) => {
   try {
@@ -359,24 +381,54 @@ router.post("/files/:fileId/edit", isAuthenticated, async (req, res) => {
       access_token: user.accessToken,
       refresh_token: user.refreshToken,
     });
+
     const docs = google.docs({
       version: "v1",
       auth: oauth2Client,
     });
 
-    await docs.documents.batchUpdate({
-      documentId: file.googleDocId,
-      requestBody: {
-        requests: [
-          {
-            insertText: {
-              text: file.content,
-              endOfSegmentLocation: {},
+    try {
+      await docs.documents.batchUpdate({
+        documentId: file.googleDocId,
+        requestBody: {
+          requests: [
+            {
+              insertText: {
+                text: file.content,
+                endOfSegmentLocation: {},
+              },
             },
+          ],
+        },
+      });
+    } catch (error) {
+      if (error.response && error.response.status === 401) {
+        // Access token is invalid or expired, refresh it
+        const newAccessToken = await refreshAccessToken(user);
+        oauth2Client.setCredentials({
+          access_token: newAccessToken,
+          refresh_token: user.refreshToken,
+        });
+        docs.auth = oauth2Client;
+
+        // Retry the request with the new access token
+        await docs.documents.batchUpdate({
+          documentId: file.googleDocId,
+          requestBody: {
+            requests: [
+              {
+                insertText: {
+                  text: file.content,
+                  endOfSegmentLocation: {},
+                },
+              },
+            ],
           },
-        ],
-      },
-    });
+        });
+      } else {
+        throw error;
+      }
+    }
 
     // Generate the Google Docs edit URL
     const editUrl = `https://docs.google.com/document/d/${file.googleDocId}/edit`;
@@ -402,8 +454,24 @@ router.put("/files/:fileId/content", isAuthenticated, async (req, res) => {
       return res.status(403).json({ message: "Forbidden" });
     }
 
+    // Get the user's OAuth2Client instance
+    const user = await User.findById(req.user._id);
+    const oauth2Client = new google.auth.OAuth2(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      "http://localhost:8080/auth/google/callback"
+    );
+    oauth2Client.setCredentials({
+      access_token: user.accessToken,
+      refresh_token: user.refreshToken,
+    });
+    const docs = google.docs({
+      version: "v1",
+      auth: oauth2Client,
+    });
+
     // Get the document content from Google Docs API
-    const doc = await googleDocsApi.documents.get({
+    const doc = await docs.documents.get({
       documentId: file.googleDocId,
     });
 
