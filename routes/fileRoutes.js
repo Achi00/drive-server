@@ -16,6 +16,39 @@ const bucket = storage.bucket(bucketName);
 
 const gcsStorage = multer.memoryStorage();
 
+async function exportHtmlFromDocument(documentId, docs) {
+  try {
+    const res = await docs.documents.get({
+      documentId: documentId,
+      fields: "body.content",
+    });
+
+    const content = res.data.body.content;
+    let html = "";
+
+    for (const element of content) {
+      if (element.paragraph) {
+        const paragraph = element.paragraph;
+        const elements = paragraph.elements;
+
+        for (const el of elements) {
+          if (el.textRun) {
+            const text = el.textRun.content;
+            html += text;
+          }
+        }
+
+        html += "<br>"; // Add a line break after each paragraph
+      }
+    }
+
+    return html;
+  } catch (error) {
+    console.error("Error exporting HTML from document:", error);
+    throw error;
+  }
+}
+
 // Define the file filter to check supported types
 const fileFilter = (req, file, cb) => {
   const supportedTypes = [
@@ -78,6 +111,33 @@ async function refreshAccessToken(user) {
     throw error;
   }
 }
+
+router.get("/export-html", isAuthenticated, async (req, res) => {
+  const documentId = "1GTRxFdGf8fGXlnQ2NWgrftrCmybyEeCdTM9wOFWmrug";
+
+  try {
+    const user = await User.findById(req.user._id);
+    const oauth2Client = new google.auth.OAuth2(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      "http://localhost:8080/auth/google/callback"
+    );
+    oauth2Client.setCredentials({
+      access_token: user.accessToken,
+      refresh_token: user.refreshToken,
+    });
+    const docs = google.docs({
+      version: "v1",
+      auth: oauth2Client,
+    });
+
+    const html = await exportHtmlFromDocument(documentId, docs);
+    res.send(html);
+  } catch (error) {
+    console.error("Error exporting HTML:", error);
+    res.status(500).send("Error exporting HTML");
+  }
+});
 
 // List all files
 router.get("/getfiles", isAuthenticated, async (req, res) => {
@@ -370,7 +430,6 @@ router.post("/files/:fileId/edit", isAuthenticated, async (req, res) => {
       return res.status(403).json({ message: "Forbidden" });
     }
 
-    // Update the Google Docs document with the content of the text file
     const user = await User.findById(req.user._id);
     const oauth2Client = new google.auth.OAuth2(
       process.env.GOOGLE_CLIENT_ID,
@@ -381,54 +440,50 @@ router.post("/files/:fileId/edit", isAuthenticated, async (req, res) => {
       access_token: user.accessToken,
       refresh_token: user.refreshToken,
     });
-
     const docs = google.docs({
       version: "v1",
       auth: oauth2Client,
     });
 
-    try {
-      await docs.documents.batchUpdate({
-        documentId: file.googleDocId,
-        requestBody: {
-          requests: [
-            {
-              insertText: {
-                text: file.content,
-                endOfSegmentLocation: {},
-              },
-            },
-          ],
-        },
-      });
-    } catch (error) {
-      if (error.response && error.response.status === 401) {
-        // Access token is invalid or expired, refresh it
-        const newAccessToken = await refreshAccessToken(user);
-        oauth2Client.setCredentials({
-          access_token: newAccessToken,
-          refresh_token: user.refreshToken,
-        });
-        docs.auth = oauth2Client;
+    // Get the current content of the Google Docs document
+    const currentDocument = await docs.documents.get({
+      documentId: file.googleDocId,
+    });
 
-        // Retry the request with the new access token
-        await docs.documents.batchUpdate({
-          documentId: file.googleDocId,
-          requestBody: {
-            requests: [
-              {
-                insertText: {
-                  text: file.content,
-                  endOfSegmentLocation: {},
-                },
+    // Replace the entire document content with an empty string
+    await docs.documents.batchUpdate({
+      documentId: file.googleDocId,
+      requestBody: {
+        requests: [
+          {
+            replaceAllText: {
+              containsText: {
+                text: "{{content}}",
+                matchCase: false,
               },
-            ],
+              replaceText: "",
+            },
           },
-        });
-      } else {
-        throw error;
-      }
-    }
+        ],
+      },
+    });
+
+    // Insert the updated content from the database into the Google Docs document
+    await docs.documents.batchUpdate({
+      documentId: file.googleDocId,
+      requestBody: {
+        requests: [
+          {
+            insertText: {
+              location: {
+                index: 1,
+              },
+              text: file.content,
+            },
+          },
+        ],
+      },
+    });
 
     // Generate the Google Docs edit URL
     const editUrl = `https://docs.google.com/document/d/${file.googleDocId}/edit`;
