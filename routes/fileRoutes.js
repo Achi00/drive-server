@@ -4,6 +4,7 @@ const File = require("../models/File");
 const User = require("../models/User");
 const path = require("path");
 const router = express.Router();
+const axios = require("axios");
 const { Storage } = require("@google-cloud/storage");
 const googleDocsApi = require("../config/googleDocsApi");
 const { google } = require("googleapis");
@@ -20,7 +21,6 @@ async function exportHtmlFromDocument(documentId, docs) {
   try {
     const res = await docs.documents.get({
       documentId: documentId,
-      fields: "body.content",
     });
 
     const content = res.data.body.content;
@@ -34,7 +34,57 @@ async function exportHtmlFromDocument(documentId, docs) {
         for (const el of elements) {
           if (el.textRun) {
             const text = el.textRun.content;
-            html += text;
+            const style = el.textRun.textStyle || {};
+            let formattedText = text;
+
+            // Apply text styles
+            if (style.bold) formattedText = `<b>${formattedText}</b>`;
+            if (style.italic) formattedText = `<i>${formattedText}</i>`;
+            if (style.underline) formattedText = `<u>${formattedText}</u>`;
+            if (style.strikethrough) formattedText = `<s>${formattedText}</s>`;
+
+            // Apply font size
+            if (style.fontSize && style.fontSize.magnitude) {
+              const fontSize = style.fontSize.magnitude;
+              formattedText = `<span style="font-size:${fontSize}pt">${formattedText}</span>`;
+            }
+
+            html += formattedText;
+          } else if (el.inlineObjectElement) {
+            const inlineObjectId = el.inlineObjectElement.inlineObjectId;
+            const inlineObject = res.data.inlineObjects[inlineObjectId];
+
+            if (
+              inlineObject &&
+              inlineObject.inlineObjectProperties &&
+              inlineObject.inlineObjectProperties.embeddedObject
+            ) {
+              const embeddedObject =
+                inlineObject.inlineObjectProperties.embeddedObject;
+
+              if (embeddedObject.imageProperties) {
+                const imageProperties = embeddedObject.imageProperties;
+                const contentUri = imageProperties.contentUri;
+
+                try {
+                  // Fetch the image data
+                  const response = await axios.get(contentUri, {
+                    responseType: "arraybuffer",
+                  });
+
+                  // Convert the image data to base64
+                  const base64Image = Buffer.from(
+                    response.data,
+                    "binary"
+                  ).toString("base64");
+
+                  // Insert the image into the HTML
+                  html += `<img src="data:image/png;base64,${base64Image}" alt="Embedded Image">`;
+                } catch (error) {
+                  console.error("Error fetching image:", error);
+                }
+              }
+            }
           }
         }
 
@@ -207,22 +257,6 @@ router.post(
         return res.status(404).json({ message: "User not found." });
       }
 
-      const oauth2Client = new google.auth.OAuth2(
-        process.env.GOOGLE_CLIENT_ID,
-        process.env.GOOGLE_CLIENT_SECRET,
-        "http://localhost:8080/auth/google/callback"
-      );
-
-      oauth2Client.setCredentials({
-        access_token: user.accessToken,
-        refresh_token: user.refreshToken,
-      });
-
-      docs = google.docs({
-        version: "v1",
-        auth: oauth2Client,
-      });
-
       user.storageLimit = user.storageLimit || 1024 * 1024 * 1024;
 
       upload(req, res, function (error) {
@@ -242,9 +276,9 @@ router.post(
           (!req.files || req.files.length === 0) &&
           rejectedFiles.length === 0
         ) {
-          return res.status(400).json({
-            message: "No files were provided for upload.",
-          });
+          return res
+            .status(400)
+            .json({ message: "No files were provided for upload." });
         }
 
         const totalSizeOfNewFiles = (req.files || []).reduce(
@@ -274,7 +308,6 @@ router.post(
       duplicates: [],
       totalStorageUsed: 0,
       location: null,
-      isPublic: req.body.isPublic || false,
     };
 
     const fileNames = new Set();
@@ -282,6 +315,7 @@ router.post(
       const uniqueFileName = `${req.user._id}_${Date.now()}_${
         file.originalname
       }`;
+      const isPublic = req.body.isPublic === "true"; // Get isPublic from request body
 
       if (fileNames.has(uniqueFileName)) {
         results.duplicates.push(file.originalname);
@@ -310,23 +344,9 @@ router.post(
               file.mimetype === "text/plain"
                 ? file.buffer.toString()
                 : undefined,
-            isPublic: req.body.isPublic || false,
+            isPublic: isPublic,
             createdAt: new Date(),
-            googleDocId: undefined,
           });
-
-          if (file.mimetype === "text/plain") {
-            try {
-              const doc = await docs.documents.create({
-                requestBody: {
-                  title: file.originalname,
-                },
-              });
-              newFile.googleDocId = doc.data.documentId;
-            } catch (error) {
-              console.error("Error creating Google Doc:", error);
-            }
-          }
 
           await newFile.save();
           results.uploaded.push(file.originalname);
@@ -345,9 +365,7 @@ router.post(
 
     const updatedUser = await User.findByIdAndUpdate(
       req.user._id,
-      {
-        $inc: { totalStorageUsed: results.totalStorageUsed },
-      },
+      { $inc: { totalStorageUsed: results.totalStorageUsed } },
       { new: true }
     );
 
@@ -380,7 +398,6 @@ router.post(
         rejected: results.rejected,
         duplicates: results.duplicates,
         location: results.location,
-        isPublic: results.isPublic,
         totalStorageUsed: formattedStorage,
         availableStorage: formattedAvailableStorage,
       });
@@ -389,7 +406,6 @@ router.post(
         message: "All files uploaded successfully",
         uploaded: results.uploaded,
         location: results.location,
-        isPublic: results.isPublic,
         totalStorageUsed: formattedStorage,
         availableStorage: formattedAvailableStorage,
       });
@@ -450,40 +466,29 @@ router.post("/files/:fileId/edit", isAuthenticated, async (req, res) => {
       documentId: file.googleDocId,
     });
 
-    // Replace the entire document content with an empty string
-    await docs.documents.batchUpdate({
-      documentId: file.googleDocId,
-      requestBody: {
-        requests: [
-          {
-            replaceAllText: {
-              containsText: {
-                text: "{{content}}",
-                matchCase: false,
-              },
-              replaceText: "",
-            },
-          },
-        ],
-      },
-    });
+    // Check if the document is newly created and empty
+    const isNewDocument = currentDocument.data.body.content.length === 1;
 
-    // Insert the updated content from the database into the Google Docs document
-    await docs.documents.batchUpdate({
-      documentId: file.googleDocId,
-      requestBody: {
-        requests: [
-          {
-            insertText: {
-              location: {
-                index: 1,
+    if (isNewDocument) {
+      // If the document is new, insert the plain text content from the database
+      const plainTextContent = extractPlainText(file.content);
+
+      await docs.documents.batchUpdate({
+        documentId: file.googleDocId,
+        requestBody: {
+          requests: [
+            {
+              insertText: {
+                location: {
+                  index: 1,
+                },
+                text: plainTextContent,
               },
-              text: file.content,
             },
-          },
-        ],
-      },
-    });
+          ],
+        },
+      });
+    }
 
     // Generate the Google Docs edit URL
     const editUrl = `https://docs.google.com/document/d/${file.googleDocId}/edit`;
@@ -495,7 +500,14 @@ router.post("/files/:fileId/edit", isAuthenticated, async (req, res) => {
   }
 });
 
-// save google docs changes on mongodb
+// Helper function to extract plain text from HTML content
+function extractPlainText(html) {
+  const tempElement = document.createElement("div");
+  tempElement.innerHTML = html;
+  return tempElement.textContent || tempElement.innerText || "";
+}
+
+// Save Google Docs changes on MongoDB
 router.put("/files/:fileId/content", isAuthenticated, async (req, res) => {
   try {
     const { fileId } = req.params;
@@ -525,25 +537,11 @@ router.put("/files/:fileId/content", isAuthenticated, async (req, res) => {
       auth: oauth2Client,
     });
 
-    // Get the document content from Google Docs API
-    const doc = await docs.documents.get({
-      documentId: file.googleDocId,
-    });
+    // Export the HTML content from the Google Docs document
+    const html = await exportHtmlFromDocument(file.googleDocId, docs);
 
-    // Extract the plain text content from the document
-    const content = doc.data.body.content
-      .map((element) => {
-        if (element.paragraph) {
-          return element.paragraph.elements
-            .map((el) => el.textRun?.content || "")
-            .join("");
-        }
-        return "";
-      })
-      .join("\n");
-
-    // Update the file content in MongoDB
-    file.content = content;
+    // Update the file content in MongoDB with the exported HTML
+    file.content = html;
     await file.save();
 
     return res
@@ -554,7 +552,6 @@ router.put("/files/:fileId/content", isAuthenticated, async (req, res) => {
     return res.status(500).json({ message: "Internal Server Error" });
   }
 });
-
 // Download a file
 router.get("/download/:fileId", isAuthenticated, async (req, res) => {
   try {
@@ -575,7 +572,8 @@ router.get("/download/:fileId", isAuthenticated, async (req, res) => {
       };
 
       const [url] = await bucket.file(file.uniqueName).getSignedUrl(options);
-      return res.redirect(url);
+      // return res.redirect(url);
+      return res.json({ url });
     } else {
       // User does not have permission to access the file
       return res.status(403).send("Access denied.");
