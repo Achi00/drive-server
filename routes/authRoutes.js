@@ -1,8 +1,6 @@
 const router = require("express").Router();
 const passport = require("passport");
 
-// auth login
-
 router.get(
   "/google",
   passport.authenticate("google", {
@@ -17,8 +15,6 @@ router.get(
   })
 );
 
-// authRoute.js
-
 router.get(
   "/google/callback",
   passport.authenticate("google", {
@@ -26,7 +22,7 @@ router.get(
   }),
   (req, res) => {
     if (req.user) {
-      // Save more data to session if needed
+      // Save more data to session
       req.session.user = {
         id: req.user._id,
         name: req.user.name,

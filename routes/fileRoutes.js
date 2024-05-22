@@ -192,31 +192,44 @@ router.get("/export-html", isAuthenticated, async (req, res) => {
 // List all files
 router.get("/getfiles", isAuthenticated, async (req, res) => {
   try {
-    const { parent } = req.query;
     const query = {
-      $or: [{ user: req.user._id }, { isPublic: true }],
+      user: req.user._id,
+      type: "file",
+      $or: [{ parent: { $exists: false } }, { parent: null }],
     };
 
-    if (parent) {
-      query.parent = parent;
-    } else {
-      query.$or.push({ parent: { $exists: false } }, { parent: null });
-    }
+    const files = await File.find(query);
+    res.json(files);
+  } catch (error) {
+    res.status(500).send("Failed to retrieve files.");
+  }
+});
+
+// list all folders
+router.get("/folders", isAuthenticated, async (req, res) => {
+  try {
+    const query = {
+      user: req.user._id,
+      type: "folder",
+    };
+
+    const folders = await File.find(query);
+    res.json(folders);
+  } catch (error) {
+    res.status(500).send("Failed to retrieve folders.");
+  }
+});
+// get files inside folders
+router.get("/folders/:folderId/files", isAuthenticated, async (req, res) => {
+  try {
+    const folderId = req.params.folderId;
+
+    const query = {
+      user: req.user._id,
+      parent: folderId,
+    };
 
     const files = await File.find(query);
-
-    // Check if any files are private and don't belong to the user
-    const privateFiles = await File.find({
-      _id: { $nin: files.map((file) => file._id) },
-      isPublic: false,
-    });
-
-    if (privateFiles.length > 0) {
-      return res
-        .status(403)
-        .json({ message: "Some files are private and cannot be accessed." });
-    }
-
     res.json(files);
   } catch (error) {
     res.status(500).send("Failed to retrieve files.");
