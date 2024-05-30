@@ -2,6 +2,7 @@ require("dotenv").config();
 const express = require("express");
 const mongoose = require("mongoose");
 const multer = require("multer");
+const bodyParser = require("body-parser");
 const passport = require("passport");
 const session = require("express-session");
 const cors = require("cors");
@@ -40,6 +41,9 @@ app.use(
 
 app.use(express.json());
 app.use(morgan("tiny"));
+
+app.use(bodyParser.json({ limit: "50mb" }));
+app.use(bodyParser.urlencoded({ limit: "50mb", extended: true }));
 
 app.use("/auth", authRoutes);
 app.use("/logout", logoutRoutes);

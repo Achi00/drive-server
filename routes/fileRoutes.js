@@ -1,5 +1,6 @@
 const express = require("express");
 const multer = require("multer");
+const sharp = require("sharp");
 const File = require("../models/File");
 const User = require("../models/User");
 const path = require("path");
@@ -8,6 +9,7 @@ const axios = require("axios");
 const { Storage } = require("@google-cloud/storage");
 const googleDocsApi = require("../config/googleDocsApi");
 const { google } = require("googleapis");
+const { v4: uuidv4 } = require("uuid");
 
 const storage = new Storage({
   keyFilename: path.join(__dirname, "../gcloud.json"),
@@ -121,7 +123,7 @@ const fileFilter = (req, file, cb) => {
 const upload = multer({
   storage: gcsStorage,
   fileFilter: fileFilter,
-  limits: { fileSize: 10 * 1024 * 1024 }, // for example, 10 MB limit
+  limits: { fileSize: 10 * 1024 * 1024, files: 5 }, // for example, 10 MB limit
 }).array("files", 5);
 
 const isAuthenticated = (req, res, next) => {
@@ -235,6 +237,27 @@ router.get("/folders/:folderId/files", isAuthenticated, async (req, res) => {
     res.status(500).send("Failed to retrieve files.");
   }
 });
+
+// get single file details by _id
+router.get("/files/:fileId", isAuthenticated, async (req, res) => {
+  try {
+    const fileId = req.params.fileId;
+    const file = await File.findById(fileId);
+
+    if (!file) {
+      return res.status(404).send("File not found.");
+    }
+
+    if (file.user.toString() !== req.user._id.toString()) {
+      return res.status(403).send("Access denied.");
+    }
+
+    res.json(file);
+  } catch (error) {
+    res.status(500).send("Error fetching file: " + error.message);
+  }
+});
+// get content field for txt file
 router.get("/files/:fileId/content", isAuthenticated, async (req, res) => {
   try {
     const fileId = req.params.fileId;
@@ -269,6 +292,19 @@ router.post(
       if (!user) {
         return res.status(404).json({ message: "User not found." });
       }
+
+      const oauth2Client = new google.auth.OAuth2(
+        process.env.GOOGLE_CLIENT_ID,
+        process.env.GOOGLE_CLIENT_SECRET,
+        "http://localhost:8080/auth/google/callback"
+      );
+
+      oauth2Client.setCredentials({
+        access_token: user.accessToken,
+        refresh_token: user.refreshToken,
+      });
+
+      docs = google.docs({ version: "v1", auth: oauth2Client });
 
       user.storageLimit = user.storageLimit || 1024 * 1024 * 1024;
 
@@ -324,10 +360,8 @@ router.post(
     };
 
     const fileNames = new Set();
-    const uploads = (req.files || []).map((file) => {
-      const uniqueFileName = `${req.user._id}_${Date.now()}_${
-        file.originalname
-      }`;
+    const uploads = (req.files || []).map(async (file) => {
+      let uniqueFileName = `${req.user._id}_${Date.now()}_${file.originalname}`;
       const isPublic = req.body.isPublic === "true"; // Get isPublic from request body
 
       if (fileNames.has(uniqueFileName)) {
@@ -336,9 +370,29 @@ router.post(
       }
       fileNames.add(uniqueFileName);
 
+      let buffer = file.buffer;
+      let converted = false;
+
+      if (
+        file.mimetype === "image/jpeg" ||
+        file.mimetype === "image/png" ||
+        file.mimetype === "image/gif"
+      ) {
+        // Convert image to WebP
+        buffer = await sharp(buffer).webp().toBuffer();
+        uniqueFileName = uniqueFileName.replace(/\.\w+$/, ".webp");
+        converted = true;
+      }
+
       const blob = bucket.file(uniqueFileName);
       const blobStream = blob.createWriteStream({
         resumable: false,
+        metadata: {
+          contentType: converted ? "image/webp" : file.mimetype,
+          metadata: {
+            originalMimeType: file.mimetype, // Add original MIME type as custom metadata
+          },
+        },
       });
 
       return new Promise((resolve, reject) => {
@@ -349,8 +403,8 @@ router.post(
             user: req.user._id,
             name: file.originalname,
             uniqueName: uniqueFileName,
-            size: file.size,
-            fileType: file.mimetype,
+            size: buffer.length, // Update size to the new buffer size
+            fileType: converted ? "image/webp" : file.mimetype, // Update fileType to webp if converted
             path: publicUrl,
             parent: req.body.parent || undefined,
             content:
@@ -361,12 +415,25 @@ router.post(
             createdAt: new Date(),
           });
 
+          if (file.mimetype === "text/plain") {
+            try {
+              const doc = await docs.documents.create({
+                requestBody: {
+                  title: file.originalname,
+                },
+              });
+              newFile.googleDocId = doc.data.documentId;
+            } catch (error) {
+              console.error("Error creating Google Doc:", error);
+            }
+          }
+
           await newFile.save();
           results.uploaded.push(file.originalname);
-          results.totalStorageUsed += file.size;
+          results.totalStorageUsed += buffer.length;
           resolve();
         });
-        blobStream.end(file.buffer);
+        blobStream.end(buffer);
       });
     });
 
@@ -428,14 +495,15 @@ router.post(
 
 router.post("/folders", isAuthenticated, async (req, res) => {
   try {
-    const { name, parent } = req.body;
+    const { name } = req.body;
     if (!name) {
       return res.status(400).json({ message: "Folder name is required" });
     }
+    const uniqueName = uuidv4(); // Generate a unique identifier for the folder
     const newFolder = new File({
       user: req.user._id,
       name,
-      parent: parent || undefined,
+      uniqueName,
       type: "folder",
     });
     await newFolder.save();
