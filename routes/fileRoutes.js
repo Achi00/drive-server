@@ -239,21 +239,29 @@ router.get("/folders/:folderId/files", isAuthenticated, async (req, res) => {
 });
 
 // get single file details by _id
-router.get("/files/:fileId", isAuthenticated, async (req, res) => {
+router.get("/files/:fileId", async (req, res) => {
   try {
     const fileId = req.params.fileId;
     const file = await File.findById(fileId);
 
+    console.log("File:", file);
+
     if (!file) {
+      console.log("File not found");
       return res.status(404).send("File not found.");
     }
 
-    if (file.user.toString() !== req.user._id.toString()) {
+    if (
+      !file.isPublic &&
+      (!req.user || file.user.toString() !== req.user._id.toString())
+    ) {
+      console.log("Access denied. User:", req.user);
       return res.status(403).send("Access denied.");
     }
 
     res.json(file);
   } catch (error) {
+    console.error("Error fetching file:", error);
     res.status(500).send("Error fetching file: " + error.message);
   }
 });
