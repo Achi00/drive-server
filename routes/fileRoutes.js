@@ -643,7 +643,7 @@ router.put("/files/:fileId/content", isAuthenticated, async (req, res) => {
   }
 });
 // Download a file
-router.get("/download/:fileId", isAuthenticated, async (req, res) => {
+router.get("/download/:fileId", async (req, res) => {
   try {
     const fileId = req.params.fileId;
     const file = await File.findById(fileId);
@@ -652,8 +652,11 @@ router.get("/download/:fileId", isAuthenticated, async (req, res) => {
       return res.status(404).send("File not found.");
     }
 
-    // Check if the authenticated user has permission to access the file
-    if (file.user.toString() === req.user._id.toString()) {
+    // Check if the file is public or if the user is authenticated and has permission to access the file
+    if (
+      file.isPublic ||
+      (req.user && file.user.toString() === req.user._id.toString())
+    ) {
       // Generate a signed URL for the file
       const options = {
         version: "v4",
@@ -662,10 +665,8 @@ router.get("/download/:fileId", isAuthenticated, async (req, res) => {
       };
 
       const [url] = await bucket.file(file.uniqueName).getSignedUrl(options);
-      // return res.redirect(url);
       return res.json({ url });
     } else {
-      // User does not have permission to access the file
       return res.status(403).send("Access denied.");
     }
   } catch (error) {
