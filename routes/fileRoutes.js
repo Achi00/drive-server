@@ -198,6 +198,7 @@ router.get("/getfiles", isAuthenticated, async (req, res) => {
       user: req.user._id,
       type: "file",
       $or: [{ parent: { $exists: false } }, { parent: null }],
+      deletedAt: { $eq: null },
     };
 
     const files = await File.find(query);
@@ -672,11 +673,70 @@ router.get("/download/:fileId", isAuthenticated, async (req, res) => {
   }
 });
 
-// Delete a file
-router.delete("/:fileId", async (req, res) => {
+// list all files in trash
+router.get("/trash", isAuthenticated, async (req, res) => {
   try {
-    await File.findByIdAndDelete(req.params.fileId);
-    res.status(200).send("File deleted successfully");
+    const files = await File.find({
+      user: req.user._id,
+      deletedAt: { $ne: null },
+    });
+    res.json(files);
+  } catch (error) {
+    res.status(500).send("Error retrieving files from trash: " + error.message);
+  }
+});
+
+// move files to trash
+router.post("/files/:fileId/trash", isAuthenticated, async (req, res) => {
+  try {
+    const file = await File.findById(req.params.fileId);
+    if (!file) {
+      return res.status(404).send("File not found.");
+    }
+    if (file.user.toString() !== req.user._id.toString()) {
+      return res.status(403).send("Access denied.");
+    }
+
+    file.deletedAt = new Date();
+    await file.save();
+    res.status(200).send("File moved to trash successfully");
+  } catch (error) {
+    res.status(500).send("Error moving file to trash: " + error.message);
+  }
+});
+
+// restore files from trash
+router.post("/files/:fileId/restore", isAuthenticated, async (req, res) => {
+  try {
+    const file = await File.findById(req.params.fileId);
+    if (!file) {
+      return res.status(404).send("File not found.");
+    }
+    if (file.user.toString() !== req.user._id.toString()) {
+      return res.status(403).send("Access denied.");
+    }
+
+    file.deletedAt = null;
+    await file.save();
+    res.status(200).send("File restored from trash successfully");
+  } catch (error) {
+    res.status(500).send("Error restoring file from trash: " + error.message);
+  }
+});
+
+// Delete a file permanently
+router.delete("/files/:fileId/permanent", isAuthenticated, async (req, res) => {
+  try {
+    const file = await File.findById(req.params.fileId);
+    if (!file) {
+      return res.status(404).send("File not found.");
+    }
+    if (file.user.toString() !== req.user._id.toString()) {
+      return res.status(403).send("Access denied.");
+    }
+
+    await file.deleteOne();
+    res.status(200).send("File permanently deleted successfully");
   } catch (error) {
     res.status(500).send("Error deleting file: " + error.message);
   }

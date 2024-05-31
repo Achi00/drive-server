@@ -28,6 +28,7 @@ const fileSchema = new mongoose.Schema({
   uniqueName: { type: String, required: true },
   isPublic: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now },
+  deletedAt: { type: Date, default: null },
 });
 
 module.exports = mongoose.model("File", fileSchema);
