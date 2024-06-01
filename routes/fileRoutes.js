@@ -521,6 +521,25 @@ router.post("/folders", isAuthenticated, async (req, res) => {
     res.status(500).send("Error creating folder: " + error.message);
   }
 });
+router.post("/folders", isAuthenticated, async (req, res) => {
+  try {
+    const { name } = req.body;
+    if (!name) {
+      return res.status(400).json({ message: "Folder name is required" });
+    }
+    const uniqueName = uuidv4(); // Generate a unique identifier for the folder
+    const newFolder = new File({
+      user: req.user._id,
+      name,
+      uniqueName,
+      type: "folder",
+    });
+    await newFolder.save();
+    res.status(201).json(newFolder);
+  } catch (error) {
+    res.status(500).send("Error creating folder: " + error.message);
+  }
+});
 
 // edit with google docs
 router.post("/files/:fileId/edit", isAuthenticated, async (req, res) => {
