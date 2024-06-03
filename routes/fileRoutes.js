@@ -693,6 +693,45 @@ router.get("/download/:fileId", async (req, res) => {
   }
 });
 
+router.get("/downloadfile/:fileId", async (req, res) => {
+  try {
+    const fileId = req.params.fileId;
+    const file = await File.findById(fileId);
+
+    if (!file) {
+      return res.status(404).send("File not found.");
+    }
+
+    // Check if the file is public or if the user is authenticated and has permission to access the file
+    if (
+      file.isPublic ||
+      (req.user && file.user.toString() === req.user._id.toString())
+    ) {
+      const options = {
+        version: "v4",
+        action: "read",
+        expires: Date.now() + 15 * 60 * 1000, // URL expires in 15 minutes
+      };
+
+      const [url] = await bucket.file(file.uniqueName).getSignedUrl(options);
+
+      // Set the necessary headers for file download
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${file.name}"`
+      );
+      res.setHeader("Content-Type", file.fileType);
+
+      // Send the URL to the client
+      return res.json({ url });
+    } else {
+      return res.status(403).send("Access denied.");
+    }
+  } catch (error) {
+    res.status(500).send("Error downloading file: " + error.message);
+  }
+});
+
 // list all files in trash
 router.get("/trash", isAuthenticated, async (req, res) => {
   try {
