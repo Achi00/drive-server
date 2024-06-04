@@ -29,7 +29,7 @@ router.get(
     };
     res.redirect(
       process.env.NODE_ENV === "production"
-        ? "https://your-client-url.com/dashboard"
+        ? "https://drive-server-dksb.onrender.com/dashboard"
         : "http://localhost:3000/dashboard"
     );
   }

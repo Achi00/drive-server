@@ -19,7 +19,7 @@ app.use(express.json());
 
 app.use(
   cors({
-    origin: ["http://localhost:3000", "https://your-client-url.com"],
+    origin: ["http://localhost:3000", "https://drive-server-dksb.onrender.com"],
     methods: "GET,POST,PUT,DELETE",
     credentials: true,
   })
