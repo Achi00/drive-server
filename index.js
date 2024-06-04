@@ -23,6 +23,7 @@ app.use(
     cookie: {
       secure: true, // Set to true in production if using HTTPS
       httpOnly: true,
+      sameSite: "none",
       maxAge: 24 * 60 * 60 * 1000, // 1 day
     },
   })
@@ -35,7 +36,7 @@ app.use(passport.session());
 app.use(
   cors({
     origin: ["http://localhost:3000", "https://drive-server-dksb.onrender.com"],
-    credentials: true, // important for sessions to work across different domains
+    credentials: true,
   })
 );
 

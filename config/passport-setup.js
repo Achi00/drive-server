@@ -33,8 +33,13 @@ passport.use(
           throw new Error("No email associated with this account!");
         }
 
+        console.log("Access Token:", accessToken);
+        console.log("Refresh Token:", refreshToken);
+        console.log("Profile:", profile);
+
         // Attempt to find the user in the database
         let user = await User.findOne({ googleId: profile.id });
+        console.log("Profile:", profile);
         if (user) {
           // If user exists, log them in
           user.accessToken = accessToken;
@@ -56,6 +61,7 @@ passport.use(
           return done(null, user);
         }
       } catch (err) {
+        console.error("Error in strategy:", err);
         done(err);
       }
       // return done(new Error("Forced error"));

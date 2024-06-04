@@ -29,9 +29,11 @@ router.get(
         email: req.user.email,
         picture: req.user.picture,
       };
+      console.log("User authenticated and session set:", req.session.user);
       // Redirect to the client-side application
       res.redirect("http://localhost:3000/dashboard");
     } else {
+      console.log("User not authenticated");
       res.redirect("/login");
     }
   }
