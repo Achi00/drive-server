@@ -7,13 +7,11 @@ const session = require("express-session");
 const cors = require("cors");
 const morgan = require("morgan");
 const helmet = require("helmet");
-const passportSetup = require("./config/passport-setup");
-const authRoutes = require("./routes/authRoutes");
-const fileRoutes = require("./routes/fileRoutes");
 const MongoDBStore = require("connect-mongodb-session")(session);
 
 const app = express();
 
+// Middleware setup
 app.use(helmet());
 app.use(express.json());
 
@@ -59,14 +57,15 @@ app.use(morgan("tiny"));
 app.use(bodyParser.json({ limit: "50mb" }));
 app.use(bodyParser.urlencoded({ limit: "50mb", extended: true }));
 
+// Debugging middleware to check session and user
 app.use((req, res, next) => {
   console.log("Session:", req.session);
   console.log("User:", req.user);
   next();
 });
 
-app.use("/auth", authRoutes);
-app.use("/v1/files", fileRoutes);
+app.use("/auth", require("./routes/authRoutes"));
+app.use("/v1/files", require("./routes/fileRoutes"));
 
 app.get("/api/session", (req, res) => {
   if (req.user) {
