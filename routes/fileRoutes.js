@@ -146,7 +146,7 @@ async function refreshAccessToken(user) {
   const oauth2Client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
-    "http://localhost:8080/auth/google/callback"
+    "https://drive-server-dksb.onrender.com/auth/google/callback"
   );
 
   oauth2Client.setCredentials({
@@ -172,7 +172,7 @@ router.get("/export-html", isAuthenticated, async (req, res) => {
     const oauth2Client = new google.auth.OAuth2(
       process.env.GOOGLE_CLIENT_ID,
       process.env.GOOGLE_CLIENT_SECRET,
-      "http://localhost:8080/auth/google/callback"
+      "https://drive-server-dksb.onrender.com/auth/google/callback"
     );
     oauth2Client.setCredentials({
       access_token: user.accessToken,
@@ -305,7 +305,7 @@ router.post(
       const oauth2Client = new google.auth.OAuth2(
         process.env.GOOGLE_CLIENT_ID,
         process.env.GOOGLE_CLIENT_SECRET,
-        "http://localhost:8080/auth/google/callback"
+        "https://drive-server-dksb.onrender.com/auth/google/callback"
       );
 
       oauth2Client.setCredentials({
@@ -559,7 +559,7 @@ router.post("/files/:fileId/edit", isAuthenticated, async (req, res) => {
     const oauth2Client = new google.auth.OAuth2(
       process.env.GOOGLE_CLIENT_ID,
       process.env.GOOGLE_CLIENT_SECRET,
-      "http://localhost:8080/auth/google/callback"
+      "https://drive-server-dksb.onrender.com/auth/google/callback"
     );
     oauth2Client.setCredentials({
       access_token: user.accessToken,
@@ -635,7 +635,7 @@ router.put("/files/:fileId/content", isAuthenticated, async (req, res) => {
     const oauth2Client = new google.auth.OAuth2(
       process.env.GOOGLE_CLIENT_ID,
       process.env.GOOGLE_CLIENT_SECRET,
-      "http://localhost:8080/auth/google/callback"
+      "https://drive-server-dksb.onrender.com/auth/google/callback"
     );
     oauth2Client.setCredentials({
       access_token: user.accessToken,
