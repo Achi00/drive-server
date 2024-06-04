@@ -74,6 +74,7 @@ app.use("/auth", authRoutes);
 app.use("/v1/files", fileRoutes);
 
 app.get("/api/session", (req, res) => {
+  console.log("User in /api/session:", req.user);
   if (req.user) {
     res.json({ user: req.user });
   } else {
