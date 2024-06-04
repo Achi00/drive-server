@@ -65,6 +65,11 @@ app.use((req, res, next) => {
   next();
 });
 
+app.use((req, res, next) => {
+  console.log("Session:", req.session);
+  next();
+});
+
 app.use("/auth", authRoutes);
 app.use("/v1/files", fileRoutes);
 
