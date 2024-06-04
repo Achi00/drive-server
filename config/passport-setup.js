@@ -20,14 +20,8 @@ passport.use(
     },
     async (accessToken, refreshToken, profile, done) => {
       try {
-        const email =
-          profile.emails && profile.emails.length > 0
-            ? profile.emails[0].value
-            : null;
-        const photo =
-          profile.photos && profile.photos.length > 0
-            ? profile.photos[0].value
-            : null;
+        const email = profile.emails?.[0]?.value ?? null;
+        const photo = profile.photos?.[0]?.value ?? null;
 
         if (!email) {
           throw new Error("No email associated with this account!");
@@ -37,17 +31,14 @@ passport.use(
         console.log("Refresh Token:", refreshToken);
         console.log("Profile:", profile);
 
-        // Attempt to find the user in the database
         let user = await User.findOne({ googleId: profile.id });
-        console.log("Profile:", profile);
         if (user) {
-          // If user exists, log them in
           user.accessToken = accessToken;
           user.refreshToken = refreshToken;
           await user.save();
+          console.log("Existing user updated:", user);
           return done(null, user);
         } else {
-          // If user doesn't exist, create a new one
           user = new User({
             googleId: profile.id,
             name: profile.displayName,
@@ -57,25 +48,26 @@ passport.use(
             refreshToken: refreshToken,
           });
           await user.save();
-          console.log("New user created: ", user);
+          console.log("New user created:", user);
           return done(null, user);
         }
       } catch (err) {
         console.error("Error in strategy:", err);
         done(err);
       }
-      // return done(new Error("Forced error"));
     }
   )
 );
 
 passport.serializeUser((user, done) => {
+  console.log("Serializing user:", user);
   done(null, user.id);
 });
 
 passport.deserializeUser(async (id, done) => {
   try {
     const user = await User.findById(id);
+    console.log("Deserializing user:", user);
     done(null, user);
   } catch (err) {
     done(err, null);
