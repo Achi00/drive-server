@@ -8,7 +8,9 @@ passport.use(
       clientID: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
       callbackURL:
-        "https://drive-server-dksb.onrender.com/auth/google/callback", // Use localhost for local testing
+        process.env.NODE_ENV === "production"
+          ? "https://your-deployed-url.com/auth/google/callback"
+          : "http://localhost:8080/auth/google/callback",
       scope: [
         "profile",
         "email",
@@ -20,21 +22,11 @@ passport.use(
     },
     async (accessToken, refreshToken, profile, done) => {
       try {
-        const email =
-          profile.emails && profile.emails.length > 0
-            ? profile.emails[0].value
-            : null;
-        const photo =
-          profile.photos && profile.photos.length > 0
-            ? profile.photos[0].value
-            : null;
-
-        if (!email) {
-          throw new Error("No email associated with this account!");
-        }
+        const email = profile.emails[0].value;
+        const photo = profile.photos[0].value;
 
         let user = await User.findOne({ googleId: profile.id });
-        console.log("Profile:", profile);
+
         if (user) {
           user.accessToken = accessToken;
           user.refreshToken = refreshToken;
@@ -50,7 +42,6 @@ passport.use(
             refreshToken: refreshToken,
           });
           await user.save();
-          console.log("New user created: ", user);
           return done(null, user);
         }
       } catch (err) {

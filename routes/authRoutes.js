@@ -21,21 +21,17 @@ router.get(
     failureRedirect: "/login",
   }),
   (req, res) => {
-    if (req.user) {
-      // Save more data to session
-      req.session.user = {
-        id: req.user._id,
-        name: req.user.name,
-        email: req.user.email,
-        picture: req.user.picture,
-      };
-      console.log("User authenticated and session set:", req.session.user);
-      // Redirect to the client-side application
-      res.redirect("http://localhost:3000/dashboard");
-    } else {
-      console.log("User not authenticated");
-      res.redirect("/login");
-    }
+    req.session.user = {
+      id: req.user._id,
+      name: req.user.name,
+      email: req.user.email,
+      picture: req.user.picture,
+    };
+    res.redirect(
+      process.env.NODE_ENV === "production"
+        ? "https://your-client-url.com/dashboard"
+        : "http://localhost:3000/dashboard"
+    );
   }
 );
 
