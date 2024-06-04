@@ -1,5 +1,4 @@
-const express = require("express");
-const router = express.Router();
+const router = require("express").Router();
 const passport = require("passport");
 
 router.get(
@@ -30,7 +29,7 @@ router.get(
     };
     res.redirect(
       process.env.NODE_ENV === "production"
-        ? "https://drive-server-dksb.onrender.com/dashboard"
+        ? "https://your-client-url.com/dashboard"
         : "http://localhost:3000/dashboard"
     );
   }
