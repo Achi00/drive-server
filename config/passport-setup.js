@@ -20,23 +20,25 @@ passport.use(
     },
     async (accessToken, refreshToken, profile, done) => {
       try {
-        const email = profile.emails?.[0]?.value ?? null;
-        const photo = profile.photos?.[0]?.value ?? null;
+        const email =
+          profile.emails && profile.emails.length > 0
+            ? profile.emails[0].value
+            : null;
+        const photo =
+          profile.photos && profile.photos.length > 0
+            ? profile.photos[0].value
+            : null;
 
         if (!email) {
           throw new Error("No email associated with this account!");
         }
 
-        console.log("Access Token:", accessToken);
-        console.log("Refresh Token:", refreshToken);
-        console.log("Profile:", profile);
-
         let user = await User.findOne({ googleId: profile.id });
+        console.log("Profile:", profile);
         if (user) {
           user.accessToken = accessToken;
           user.refreshToken = refreshToken;
           await user.save();
-          console.log("Existing user updated:", user);
           return done(null, user);
         } else {
           user = new User({
@@ -48,11 +50,10 @@ passport.use(
             refreshToken: refreshToken,
           });
           await user.save();
-          console.log("New user created:", user);
+          console.log("New user created: ", user);
           return done(null, user);
         }
       } catch (err) {
-        console.error("Error in strategy:", err);
         done(err);
       }
     }
@@ -60,14 +61,12 @@ passport.use(
 );
 
 passport.serializeUser((user, done) => {
-  console.log("Serializing user:", user);
   done(null, user.id);
 });
 
 passport.deserializeUser(async (id, done) => {
   try {
     const user = await User.findById(id);
-    console.log("Deserializing user:", user);
     done(null, user);
   } catch (err) {
     done(err, null);

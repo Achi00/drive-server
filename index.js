@@ -53,7 +53,6 @@ app.use((req, res, next) => {
 
 app.use("/auth", authRoutes);
 app.use("/logout", logoutRoutes);
-// file upload
 app.use("/v1/files", fileRoutes);
 
 app.get("/api/session", (req, res) => {
