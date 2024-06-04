@@ -22,7 +22,7 @@ app.use(
     cookie: {
       secure: true, // Set to true in production if using HTTPS
       httpOnly: true,
-      sameSite: "none",
+      sameSite: "none", // Required for cross-site cookies
       maxAge: 24 * 60 * 60 * 1000, // 1 day
     },
   })
