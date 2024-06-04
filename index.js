@@ -21,7 +21,7 @@ app.use(
     resave: false,
     saveUninitialized: false,
     cookie: {
-      secure: false, // Set to true in production if using HTTPS
+      secure: true, // Set to true in production if using HTTPS
       httpOnly: true,
       maxAge: 24 * 60 * 60 * 1000, // 1 day
     },
@@ -34,7 +34,7 @@ app.use(passport.session());
 // Middleware
 app.use(
   cors({
-    origin: "http://localhost:3000",
+    origin: ["http://localhost:3000", "https://drive-server-dksb.onrender.com"],
     credentials: true, // important for sessions to work across different domains
   })
 );
@@ -44,6 +44,12 @@ app.use(morgan("tiny"));
 
 app.use(bodyParser.json({ limit: "50mb" }));
 app.use(bodyParser.urlencoded({ limit: "50mb", extended: true }));
+
+app.use((req, res, next) => {
+  console.log("Session:", req.session);
+  console.log("User:", req.user);
+  next();
+});
 
 app.use("/auth", authRoutes);
 app.use("/logout", logoutRoutes);
