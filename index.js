@@ -14,6 +14,9 @@ const fileRoutes = require("./routes/fileRoutes");
 
 const app = express();
 
+// Environment-based settings
+const isProduction = process.env.NODE_ENV === "production";
+
 // Session configuration
 app.use(
   session({
@@ -21,9 +24,9 @@ app.use(
     resave: false,
     saveUninitialized: false,
     cookie: {
-      secure: true, // Set to true in production with HTTPS
+      secure: isProduction, // Ensure cookies are only sent over HTTPS in production
       httpOnly: true,
-      sameSite: "none", // Set to 'none' for cross-site requests
+      sameSite: isProduction ? "none" : "lax", // Allow cross-site cookies in production
       maxAge: 24 * 60 * 60 * 1000, // 1 day
     },
   })
@@ -77,7 +80,7 @@ app.get("/", (req, res) => {
 });
 
 // Start the server
-const PORT = 8080;
+const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
   console.log(`Server is running on http://localhost:${PORT}`);
 });
