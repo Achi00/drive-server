@@ -1,53 +1,29 @@
 require("dotenv").config();
 const express = require("express");
 const mongoose = require("mongoose");
+const multer = require("multer");
 const bodyParser = require("body-parser");
 const passport = require("passport");
 const session = require("express-session");
 const cors = require("cors");
 const morgan = require("morgan");
-const helmet = require("helmet");
 const passportSetup = require("./config/passport-setup");
 const authRoutes = require("./routes/authRoutes");
+const logoutRoutes = require("./routes/logoutRoutes");
 const fileRoutes = require("./routes/fileRoutes");
-const MongoDBStore = require("connect-mongodb-session")(session);
 
 const app = express();
 
-app.use(helmet());
-app.use(express.json());
-
-app.use(
-  cors({
-    origin: ["http://localhost:3000", "https://your-client-url.com"],
-    methods: "GET,POST,PUT,DELETE",
-    credentials: true,
-  })
-);
-
-const store = new MongoDBStore({
-  uri: process.env.MONGODB_URI,
-  collection: "sessions",
-});
-
-store.on("error", function (error) {
-  console.error(error);
-});
-
-app.set("trust proxy", 1);
-
+// Session configuration
 app.use(
   session({
     secret: process.env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
-    store: store,
-    proxy: true,
     cookie: {
-      secure: process.env.NODE_ENV === "production",
+      secure: false, // Set to true in production if using HTTPS
       httpOnly: true,
-      sameSite: "none",
-      maxAge: 24 * 60 * 60 * 1000,
+      maxAge: 24 * 60 * 60 * 1000, // 1 day
     },
   })
 );
@@ -55,26 +31,26 @@ app.use(
 app.use(passport.initialize());
 app.use(passport.session());
 
+// Middleware
+app.use(
+  cors({
+    origin: ["http://localhost:3000", "https://drive-server-dksb.onrender.com"],
+    credentials: true, // important for sessions to work across different domains
+  })
+);
+
+app.use(express.json());
 app.use(morgan("tiny"));
+
 app.use(bodyParser.json({ limit: "50mb" }));
 app.use(bodyParser.urlencoded({ limit: "50mb", extended: true }));
 
-app.use((req, res, next) => {
-  console.log("Session:", req.session);
-  console.log("User:", req.user);
-  next();
-});
-
-app.use((req, res, next) => {
-  console.log("Session:", req.session);
-  next();
-});
-
 app.use("/auth", authRoutes);
+app.use("/logout", logoutRoutes);
+// file upload
 app.use("/v1/files", fileRoutes);
 
 app.get("/api/session", (req, res) => {
-  console.log("User in /api/session:", req.user);
   if (req.user) {
     res.json({ user: req.user });
   } else {
@@ -82,6 +58,7 @@ app.get("/api/session", (req, res) => {
   }
 });
 
+// MongoDB connection
 mongoose
   .connect(process.env.MONGODB_URI, {
     useNewUrlParser: true,
@@ -90,11 +67,13 @@ mongoose
   .then(() => console.log("MongoDB connected"))
   .catch((err) => console.error("MongoDB connection error:", err));
 
+// Define routes
 app.get("/", (req, res) => {
   res.send("Hello World!");
 });
 
-const PORT = process.env.PORT || 8080;
+// Start the server
+const PORT = 8080;
 app.listen(PORT, () => {
   console.log(`Server is running on http://localhost:${PORT}`);
 });
