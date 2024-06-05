@@ -35,7 +35,11 @@ app.use(passport.session());
 // Middleware
 app.use(
   cors({
-    origin: "https://drive-server-dksb.onrender.com", // Deployed server
+    origin: [
+      "http://localhost:3000", // Local frontend
+      "https://wordcrafter.io", // Custom frontend domain
+      "https://api.wordcrafter.io", // Custom backend domain
+    ],
     credentials: true, // important for sessions to work across different domains
   })
 );

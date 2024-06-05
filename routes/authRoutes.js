@@ -29,8 +29,8 @@ router.get(
         picture: req.user.picture,
       };
       console.log("User authenticated, session data:", req.session);
-      // Redirect to the client-side application
-      res.redirect("http://localhost:3000/dashboard"); // Change to your deployed frontend URL if needed
+      // Redirect to the client-side application running on localhost:3000
+      res.redirect("http://localhost:3000/dashboard");
     } else {
       res.redirect("/login");
     }

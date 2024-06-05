@@ -7,8 +7,7 @@ passport.use(
     {
       clientID: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      callbackURL:
-        "https://drive-server-dksb.onrender.com/auth/google/callback",
+      callbackURL: "https://api.wordcrafter.io/auth/google/callback",
       scope: [
         "profile",
         "email",
