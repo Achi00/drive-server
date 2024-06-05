@@ -8,9 +8,7 @@ passport.use(
       clientID: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
       callbackURL:
-        process.env.NODE_ENV === "production"
-          ? "https://drive-server-dksb.onrender.com/auth/google/callback"
-          : "http://localhost:8080/auth/google/callback",
+        "https://drive-server-dksb.onrender.com/auth/google/callback",
       scope: [
         "profile",
         "email",

@@ -14,9 +14,6 @@ const fileRoutes = require("./routes/fileRoutes");
 
 const app = express();
 
-// Environment-based settings
-const isProduction = process.env.NODE_ENV === "production";
-
 // Session configuration
 app.use(
   session({
@@ -24,9 +21,9 @@ app.use(
     resave: false,
     saveUninitialized: false,
     cookie: {
-      secure: isProduction, // Ensure cookies are only sent over HTTPS in production
+      secure: true, // Ensure cookies are only sent over HTTPS
       httpOnly: true,
-      sameSite: isProduction ? "none" : "lax", // Allow cross-site cookies in production
+      sameSite: "none", // Allow cross-site cookies
       maxAge: 24 * 60 * 60 * 1000, // 1 day
     },
   })
@@ -38,10 +35,7 @@ app.use(passport.session());
 // Middleware
 app.use(
   cors({
-    origin: [
-      "http://localhost:3000", // Local client
-      "https://drive-server-dksb.onrender.com", // Deployed server
-    ],
+    origin: "https://drive-server-dksb.onrender.com", // Deployed server
     credentials: true, // important for sessions to work across different domains
   })
 );

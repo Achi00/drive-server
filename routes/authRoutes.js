@@ -30,7 +30,7 @@ router.get(
       };
       console.log("User authenticated, session data:", req.session);
       // Redirect to the client-side application
-      res.redirect("http://localhost:3000/dashboard");
+      res.redirect("http://localhost:3000/dashboard"); // Change to your deployed frontend URL if needed
     } else {
       res.redirect("/login");
     }
