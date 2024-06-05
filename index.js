@@ -33,12 +33,13 @@ app.use(
     secret: process.env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
+    store: MongoStore.create({ mongoUrl: process.env.MONGODB_URI }),
     cookie: {
       secure: true,
       httpOnly: true,
       domain: ".wordcrafter.io",
       maxAge: 24 * 60 * 60 * 1000, // 1 day
-      sameSite: "none",
+      sameSite: "None",
     },
   })
 );
