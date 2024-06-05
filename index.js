@@ -53,6 +53,7 @@ app.use("/logout", logoutRoutes);
 app.use("/v1/files", fileRoutes);
 
 app.get("/api/session", (req, res) => {
+  console.log("Session data:", req.session);
   if (req.user) {
     res.json({ user: req.user });
   } else {
