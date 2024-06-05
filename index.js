@@ -1,18 +1,31 @@
 require("dotenv").config();
 const express = require("express");
 const mongoose = require("mongoose");
-const multer = require("multer");
 const bodyParser = require("body-parser");
 const passport = require("passport");
 const session = require("express-session");
+const MongoStore = require("connect-mongo");
 const cors = require("cors");
 const morgan = require("morgan");
+const cookieParser = require("cookie-parser");
 const passportSetup = require("./config/passport-setup");
 const authRoutes = require("./routes/authRoutes");
 const logoutRoutes = require("./routes/logoutRoutes");
 const fileRoutes = require("./routes/fileRoutes");
 
 const app = express();
+
+// Middleware
+app.use(
+  cors({
+    origin: ["http://localhost:3000", "https://api.wordcrafter.io"],
+    credentials: true,
+  })
+);
+
+app.use(express.json());
+app.use(morgan("tiny"));
+app.use(cookieParser());
 
 // Session configuration
 app.use(
@@ -21,10 +34,11 @@ app.use(
     resave: false,
     saveUninitialized: false,
     cookie: {
-      secure: true, // Ensure cookies are only sent over HTTPS
+      secure: true,
       httpOnly: true,
-      sameSite: "none", // Allow cross-site cookies
+      domain: ".wordcrafter.io",
       maxAge: 24 * 60 * 60 * 1000, // 1 day
+      sameSite: "none",
     },
   })
 );
@@ -32,30 +46,27 @@ app.use(
 app.use(passport.initialize());
 app.use(passport.session());
 
-// Middleware
-app.use(
-  cors({
-    origin: [
-      "http://localhost:3000", // Local frontend
-      "https://wordcrafter.io", // Custom frontend domain
-      "https://api.wordcrafter.io", // Custom backend domain
-    ],
-    credentials: true, // important for sessions to work across different domains
-  })
-);
-
-app.use(express.json());
-app.use(morgan("tiny"));
-
-app.use(bodyParser.json({ limit: "50mb" }));
-app.use(bodyParser.urlencoded({ limit: "50mb", extended: true }));
+app.use((req, res, next) => {
+  console.log("Cookies middleware:", req.cookies);
+  next();
+});
 
 app.use("/auth", authRoutes);
 app.use("/logout", logoutRoutes);
-// file upload
 app.use("/v1/files", fileRoutes);
 
 app.get("/api/session", (req, res) => {
+  console.log("Session data:", req.session);
+  if (req.user) {
+    res.json({ user: req.user });
+  } else {
+    res.status(401).json({ message: "You are not authenticated" });
+  }
+});
+
+app.get("/test-session", (req, res) => {
+  console.log("Session data on /test-session:", req.session);
+  console.log("Session cookie:", req.cookies["connect.sid"]);
   if (req.user) {
     res.json({ user: req.user });
   } else {
