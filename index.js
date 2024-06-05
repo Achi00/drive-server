@@ -34,10 +34,10 @@ app.use(
     saveUninitialized: false,
     store: MongoStore.create({ mongoUrl: process.env.MONGODB_URI }),
     cookie: {
-      secure: true,
+      secure: true, // Set to true in production if using HTTPS
       httpOnly: true,
       domain: ".onrender.com",
-      maxAge: 24 * 60 * 60 * 1000,
+      maxAge: 24 * 60 * 60 * 1000, // 1 day
       sameSite: "None",
     },
   })
@@ -47,7 +47,7 @@ app.use(passport.initialize());
 app.use(passport.session());
 
 app.use((req, res, next) => {
-  console.log("Cookies:", req.cookies);
+  console.log("Cookies middleware:", req.cookies);
   next();
 });
 
