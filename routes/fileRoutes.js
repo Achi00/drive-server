@@ -127,8 +127,7 @@ const upload = multer({
 }).array("files", 5);
 
 const isAuthenticated = (req, res, next) => {
-  console.log("Session data:", req.session);
-  if (!req.isAuthenticated || !req.isAuthenticated()) {
+  if (!req.user) {
     return res.status(401).send("User not authenticated");
   }
   next();

@@ -1,12 +1,12 @@
 require("dotenv").config();
 const express = require("express");
 const mongoose = require("mongoose");
-const session = require("express-session");
-const MongoStore = require("connect-mongo");
+const multer = require("multer");
+const bodyParser = require("body-parser");
 const passport = require("passport");
+const session = require("express-session");
 const cors = require("cors");
 const morgan = require("morgan");
-const cookieParser = require("cookie-parser");
 const passportSetup = require("./config/passport-setup");
 const authRoutes = require("./routes/authRoutes");
 const logoutRoutes = require("./routes/logoutRoutes");
@@ -14,31 +14,17 @@ const fileRoutes = require("./routes/fileRoutes");
 
 const app = express();
 
-// Middleware
-app.use(
-  cors({
-    origin: ["http://localhost:3000", "https://drive-server-dksb.onrender.com"],
-    credentials: true, // important for sessions to work across different domains
-  })
-);
-
-app.use(express.json());
-app.use(morgan("tiny"));
-app.use(cookieParser()); // Add cookie-parser middleware
-
 // Session configuration
 app.use(
   session({
     secret: process.env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
-    store: MongoStore.create({ mongoUrl: process.env.MONGODB_URI }),
     cookie: {
-      secure: true, // Set to true in production if using HTTPS
+      secure: true, // Set to true in production with HTTPS
       httpOnly: true,
-      domain: ".onrender.com",
+      sameSite: "none", // Set to 'none' for cross-site requests
       maxAge: 24 * 60 * 60 * 1000, // 1 day
-      sameSite: "None",
     },
   })
 );
@@ -46,28 +32,29 @@ app.use(
 app.use(passport.initialize());
 app.use(passport.session());
 
-app.use((req, res, next) => {
-  console.log("Cookies middleware:", req.cookies);
-  next();
-});
+// Middleware
+app.use(
+  cors({
+    origin: [
+      "http://localhost:3000", // Local client
+      "https://drive-server-dksb.onrender.com", // Deployed server
+    ],
+    credentials: true, // important for sessions to work across different domains
+  })
+);
+
+app.use(express.json());
+app.use(morgan("tiny"));
+
+app.use(bodyParser.json({ limit: "50mb" }));
+app.use(bodyParser.urlencoded({ limit: "50mb", extended: true }));
 
 app.use("/auth", authRoutes);
 app.use("/logout", logoutRoutes);
+// file upload
 app.use("/v1/files", fileRoutes);
 
-// Test endpoint to check session data
-app.get("/test-session", (req, res) => {
-  console.log("Session data on /test-session:", req.session);
-  console.log("Session cookie:", req.cookies["connect.sid"]);
-  if (req.user) {
-    res.json({ user: req.user });
-  } else {
-    res.status(401).json({ message: "You are not authenticated" });
-  }
-});
-
 app.get("/api/session", (req, res) => {
-  console.log("Session data:", req.session);
   if (req.user) {
     res.json({ user: req.user });
   } else {

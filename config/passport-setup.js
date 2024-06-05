@@ -58,7 +58,6 @@ passport.use(
       } catch (err) {
         done(err);
       }
-      // return done(new Error("Forced error"));
     }
   )
 );
