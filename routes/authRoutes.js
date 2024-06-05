@@ -22,13 +22,13 @@ router.get(
   }),
   (req, res) => {
     if (req.user) {
-      // Save more data to session
       req.session.user = {
         id: req.user._id,
         name: req.user.name,
         email: req.user.email,
         picture: req.user.picture,
       };
+      console.log("User authenticated, session data:", req.session);
       // Redirect to the client-side application
       res.redirect("http://localhost:3000/dashboard");
     } else {

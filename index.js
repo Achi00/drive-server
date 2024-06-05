@@ -11,6 +11,7 @@ const passportSetup = require("./config/passport-setup");
 const authRoutes = require("./routes/authRoutes");
 const logoutRoutes = require("./routes/logoutRoutes");
 const fileRoutes = require("./routes/fileRoutes");
+const MongoStore = require("connect-mongo");
 
 const app = express();
 
@@ -20,8 +21,9 @@ app.use(
     secret: process.env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
+    store: MongoStore.create({ mongoUrl: process.env.MONGODB_URI }),
     cookie: {
-      secure: false, // Set to true in production if using HTTPS
+      secure: process.env.NODE_ENV === "production", // Set to true in production if using HTTPS
       httpOnly: true,
       maxAge: 24 * 60 * 60 * 1000, // 1 day
     },
