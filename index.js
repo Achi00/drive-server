@@ -49,6 +49,16 @@ app.use(morgan("tiny"));
 app.use(bodyParser.json({ limit: "50mb" }));
 app.use(bodyParser.urlencoded({ limit: "50mb", extended: true }));
 
+// Test endpoint to check session data
+app.get("/test-session", (req, res) => {
+  console.log("Session data on /test-session:", req.session);
+  if (req.user) {
+    res.json({ user: req.user });
+  } else {
+    res.status(401).json({ message: "You are not authenticated" });
+  }
+});
+
 app.use("/auth", authRoutes);
 app.use("/logout", logoutRoutes);
 // file upload
