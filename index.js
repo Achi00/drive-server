@@ -6,6 +6,7 @@ const MongoStore = require("connect-mongo");
 const passport = require("passport");
 const cors = require("cors");
 const morgan = require("morgan");
+const cookieParser = require("cookie-parser");
 const passportSetup = require("./config/passport-setup");
 const authRoutes = require("./routes/authRoutes");
 const logoutRoutes = require("./routes/logoutRoutes");
@@ -23,6 +24,7 @@ app.use(
 
 app.use(express.json());
 app.use(morgan("tiny"));
+app.use(cookieParser()); // Add cookie-parser middleware
 
 // Session configuration
 app.use(
@@ -32,7 +34,7 @@ app.use(
     saveUninitialized: false,
     store: MongoStore.create({ mongoUrl: process.env.MONGODB_URI }),
     cookie: {
-      secure: true, // Set to true in production if using HTTPS
+      secure: process.env.NODE_ENV === "production", // Set to true in production if using HTTPS
       httpOnly: true,
       domain: ".onrender.com",
       maxAge: 24 * 60 * 60 * 1000, // 1 day
