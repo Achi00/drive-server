@@ -18,7 +18,7 @@ const app = express();
 // Middleware
 app.use(
   cors({
-    origin: ["http://localhost:3000", "https://api.wordcrafter.io"],
+    origin: ["http://localhost:3000"],
     credentials: true,
   })
 );
@@ -33,13 +33,10 @@ app.use(
     secret: process.env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
-    store: MongoStore.create({ mongoUrl: process.env.MONGODB_URI }),
     cookie: {
-      secure: true,
+      secure: false, // Set to true in production if using HTTPS
       httpOnly: true,
-      domain: ".wordcrafter.io",
       maxAge: 24 * 60 * 60 * 1000, // 1 day
-      sameSite: "None",
     },
   })
 );

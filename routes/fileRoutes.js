@@ -231,9 +231,16 @@ router.get("/folders/:folderId/files", isAuthenticated, async (req, res) => {
       user: req.user._id,
       parent: folderId,
     };
+    const folderQuery = {
+      user: req.user._id,
+      type: "folder",
+      _id: folderId,
+    };
 
     const files = await File.find(query);
-    res.json(files);
+    const folderName = await File.find(folderQuery);
+    console.log("Folder Name:", folderName[0].name);
+    res.status(200).json({ folderName: folderName[0].name, files });
   } catch (error) {
     res.status(500).send("Failed to retrieve files.");
   }
@@ -635,7 +642,7 @@ router.put("/files/:fileId/content", isAuthenticated, async (req, res) => {
     const oauth2Client = new google.auth.OAuth2(
       process.env.GOOGLE_CLIENT_ID,
       process.env.GOOGLE_CLIENT_SECRET,
-      "https://api.wordcrafter.io/auth/google/callback"
+      "http://localhost:8080/auth/google/callback"
     );
     oauth2Client.setCredentials({
       access_token: user.accessToken,
